@@ -1,0 +1,233 @@
+services:
+  wallet-db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: aries
+      POSTGRES_PASSWORD: changeit
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./wallet-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aries"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # TAILS SERVER
+  tails-server:
+      image: ghcr.io/bcgov/tails-server:latest
+      ports:
+        - 6543:6543
+      environment:
+        - GENESIS_URL=http://test.bcovrin.vonx.io/genesis
+      command: >
+        tails-server
+        --host 0.0.0.0
+        --port 6543
+        --storage-path /tmp/tails-files
+        --log-level info
+
+  # ISSUER (GOVERNMENT)
+  agent-issuer:
+    image: ghcr.io/openwallet-foundation/acapy-agent:py3.12-1.3.2
+    ports:
+      - "8001:8001"
+      - "8000:8000"
+    environment:
+      - ACAPY_LABEL=Issuer_Gov
+      - ACAPY_ENDPOINT=http://agent-issuer:8000
+      - ACAPY_GENESIS_URL=http://test.bcovrin.vonx.io/genesis
+      - ACAPY_WALLET_TYPE=askar-anoncreds
+      - ACAPY_WALLET_NAME=issuer_wallet
+      - ACAPY_WALLET_KEY=insecure
+      - ACAPY_AUTO_PROVISION=true
+      - ACAPY_LOG_LEVEL=info
+      - ACAPY_WALLET_STORAGE_TYPE=postgres
+      - ACAPY_WALLET_STORAGE_CONFIG={"url":"wallet-db:5432","max_connections":5}
+      - ACAPY_WALLET_STORAGE_CREDS={"account":"aries","password":"changeit","admin_account":"aries","admin_password":"changeit"}
+      - ACAPY_TAILS_SERVER_BASE_URL=http://tails-server:6543
+      # PHC Key Management — Set these to production values in deployment
+      - PHC_ENROLLMENT_SECRET_KEY=${PHC_ENROLLMENT_SECRET_KEY:-}
+      - PHC_ALLOW_SIMULATED=${PHC_ALLOW_SIMULATED:-false}
+      - PHC_DEDUP_BACKEND=${PHC_DEDUP_BACKEND:-json}
+    command:
+      - start
+      - --inbound-transport
+      - http
+      - '0.0.0.0'
+      - '8000'
+      - --outbound-transport
+      - http
+      - --admin
+      - '0.0.0.0'
+      - '8001'
+      - --admin-insecure-mode
+      - --auto-accept-invites
+      - --auto-accept-requests
+      - --public-invites
+      - --notify-revocation
+      - --monitor-revocation-notification
+    depends_on:
+      wallet-db:
+        condition: service_healthy
+      tails-server:
+        condition: service_started
+
+  # HOLDER A (User A's AI Agent)
+  agent-holder-a:
+    image: ghcr.io/openwallet-foundation/acapy-agent:py3.12-1.3.2
+    ports:
+      - "8011:8011"
+      - "8010:8010"
+    environment:
+      - ACAPY_LABEL=AI_Agent_User_A
+      - ACAPY_ENDPOINT=http://agent-holder-a:8010
+      - ACAPY_GENESIS_URL=http://test.bcovrin.vonx.io/genesis
+      - ACAPY_WALLET_TYPE=askar-anoncreds
+      - ACAPY_WALLET_NAME=holder_a_wallet
+      - ACAPY_WALLET_KEY=insecure
+      - ACAPY_AUTO_PROVISION=true
+      - ACAPY_LOG_LEVEL=info
+      - ACAPY_WALLET_STORAGE_TYPE=postgres
+      - ACAPY_WALLET_STORAGE_CONFIG={"url":"wallet-db:5432","max_connections":5}
+      - ACAPY_WALLET_STORAGE_CREDS={"account":"aries","password":"changeit","admin_account":"aries","admin_password":"changeit"}
+      - ACAPY_TAILS_SERVER_BASE_URL=http://tails-server:6543
+      - PHC_ALLOW_SIMULATED=${PHC_ALLOW_SIMULATED:-false}
+    command:
+      - start
+      - --inbound-transport
+      - http
+      - '0.0.0.0'
+      - '8010'
+      - --outbound-transport
+      - http
+      - --admin
+      - '0.0.0.0'
+      - '8011'
+      - --admin-insecure-mode
+      - --auto-accept-invites
+      - --auto-accept-requests
+      - --auto-respond-credential-offer
+      - --auto-respond-presentation-request
+      - --auto-store-credential
+      - --monitor-revocation-notification
+    depends_on:
+      wallet-db:
+        condition: service_healthy
+
+  # HOLDER B (User B's AI Agent)
+  agent-holder-b:
+    image: ghcr.io/openwallet-foundation/acapy-agent:py3.12-1.3.2
+    ports:
+      - "8041:8041"
+      - "8040:8040"
+    environment:
+      - ACAPY_LABEL=AI_Agent_User_B
+      - ACAPY_ENDPOINT=http://agent-holder-b:8040
+      - ACAPY_GENESIS_URL=http://test.bcovrin.vonx.io/genesis
+      - ACAPY_WALLET_TYPE=askar-anoncreds
+      - ACAPY_WALLET_NAME=holder_b_wallet
+      - ACAPY_WALLET_KEY=insecure
+      - ACAPY_AUTO_PROVISION=true
+      - ACAPY_LOG_LEVEL=info
+      - ACAPY_WALLET_STORAGE_TYPE=postgres
+      - ACAPY_WALLET_STORAGE_CONFIG={"url":"wallet-db:5432","max_connections":5}
+      - ACAPY_WALLET_STORAGE_CREDS={"account":"aries","password":"changeit","admin_account":"aries","admin_password":"changeit"}
+      - ACAPY_TAILS_SERVER_BASE_URL=http://tails-server:6543
+      - PHC_ALLOW_SIMULATED=${PHC_ALLOW_SIMULATED:-false}
+    command:
+      - start
+      - --inbound-transport
+      - http
+      - '0.0.0.0'
+      - '8040'
+      - --outbound-transport
+      - http
+      - --admin
+      - '0.0.0.0'
+      - '8041'
+      - --admin-insecure-mode
+      - --auto-accept-invites
+      - --auto-accept-requests
+      - --auto-respond-credential-offer
+      - --auto-respond-presentation-request
+      - --auto-store-credential
+      - --monitor-revocation-notification
+    depends_on:
+      wallet-db:
+        condition: service_healthy
+
+  # VERIFIER (BANK A)
+  agent-verifier-a:
+    image: ghcr.io/openwallet-foundation/acapy-agent:py3.12-1.3.2
+    ports:
+      - "8021:8021"
+      - "8020:8020"
+    environment:
+      - ACAPY_LABEL=Bank_A_OpenFinance
+      - ACAPY_ENDPOINT=http://agent-verifier-a:8020
+      - ACAPY_GENESIS_URL=http://test.bcovrin.vonx.io/genesis
+      - ACAPY_WALLET_TYPE=askar-anoncreds
+      - ACAPY_WALLET_NAME=verifier_a_wallet
+      - ACAPY_WALLET_KEY=insecure
+      - ACAPY_AUTO_PROVISION=true
+      - ACAPY_LOG_LEVEL=info
+      - ACAPY_WALLET_STORAGE_TYPE=postgres
+      - ACAPY_WALLET_STORAGE_CONFIG={"url":"wallet-db:5432","max_connections":5}
+      - ACAPY_WALLET_STORAGE_CREDS={"account":"aries","password":"changeit","admin_account":"aries","admin_password":"changeit"}
+      - ACAPY_TAILS_SERVER_BASE_URL=http://tails-server:6543
+    command:
+      - start
+      - --inbound-transport
+      - http
+      - '0.0.0.0'
+      - '8020'
+      - --outbound-transport
+      - http
+      - --admin
+      - '0.0.0.0'
+      - '8021'
+      - --admin-insecure-mode
+      - --auto-accept-invites
+      - --auto-accept-requests
+    depends_on:
+      wallet-db:
+        condition: service_healthy
+
+  # VERIFIER (BANK B)
+  agent-verifier-b:
+    image: ghcr.io/openwallet-foundation/acapy-agent:py3.12-1.3.2
+    ports:
+      - "8031:8031"
+      - "8030:8030"
+    environment:
+      - ACAPY_LABEL=Bank_B_OpenFinance
+      - ACAPY_ENDPOINT=http://agent-verifier-b:8030
+      - ACAPY_GENESIS_URL=http://test.bcovrin.vonx.io/genesis
+      - ACAPY_WALLET_TYPE=askar-anoncreds
+      - ACAPY_WALLET_NAME=verifier_b_wallet
+      - ACAPY_WALLET_KEY=insecure
+      - ACAPY_AUTO_PROVISION=true
+      - ACAPY_LOG_LEVEL=info
+      - ACAPY_WALLET_STORAGE_TYPE=postgres
+      - ACAPY_WALLET_STORAGE_CONFIG={"url":"wallet-db:5432","max_connections":5}
+      - ACAPY_WALLET_STORAGE_CREDS={"account":"aries","password":"changeit","admin_account":"aries","admin_password":"changeit"}
+      - ACAPY_TAILS_SERVER_BASE_URL=http://tails-server:6543
+    command:
+      - start
+      - --inbound-transport
+      - http
+      - '0.0.0.0'
+      - '8030'
+      - --outbound-transport
+      - http
+      - --admin
+      - '0.0.0.0'
+      - '8031'
+      - --admin-insecure-mode
+      - --auto-accept-invites
+      - --auto-accept-requests
+    depends_on:
+      wallet-db:
+        condition: service_healthy
